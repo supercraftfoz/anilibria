@@ -38,3 +38,16 @@ export interface Tosho {
     anidb_fid?: number
     nzb_url?: string
 }
+
+export interface AniLibria {
+    id: number
+    torrents: {
+        hash: string
+        quality: {
+            string: string
+        }
+        series?: number
+        size: number
+        uploaded_timestamp: number
+    }[]
+}
