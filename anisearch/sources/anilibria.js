@@ -1,18 +1,37 @@
 import AbstractSource from './abstract.js'
 
 export default new class AniLibria extends AbstractSource {
-  url = atob('aHR0cHM6Ly9hcGkuYW5pbGlicmlhLnR2L3YxL2dldFRvcnJlbnQ=')
   apiUrl = atob('aHR0cHM6Ly9hcGkuYW5pbGlicmlhLnR2L3YxL2dldFRpdGxl')
+  torrentUrl = atob('aHR0cHM6Ly9hcGkuYW5pbGlicmlhLnR2L3YxL2dldFRvcnJlbnQ=')
 
   /**
+   * Поиск по anilistId через поиск по названию
    * @param {number} anilistId
-   * @returns {Promise<number|null>}
+   * @param {string[]} titles
+   * @returns {Promise<string|null>}
    */
-  async #getAniLibriaId(anilistId) {
+  async #getAniLibriaCode(anilistId, titles) {
+    if (!titles?.length) return null
+    
     try {
-      const res = await fetch(`${this.apiUrl}?id=${anilistId}`)
+      // Пробуем найти по названию (используем первое название)
+      const searchTitle = titles[0]
+      const res = await fetch(`${this.apiUrl}?search=${encodeURIComponent(searchTitle)}`)
+      if (!res.ok) return null
+      
       const data = await res.json()
-      return data?.id || null
+      
+      // Ищем точное совпадение или первое подходящее
+      if (data && data.code) {
+        return data.code
+      }
+      
+      // Если это массив, ищем первый элемент
+      if (Array.isArray(data) && data.length > 0) {
+        return data[0].code || null
+      }
+      
+      return null
     } catch {
       return null
     }
@@ -20,39 +39,42 @@ export default new class AniLibria extends AbstractSource {
 
   /**
    * @param {Object} params
-   * @param {number} params.anilibriaId
+   * @param {string} params.code
    * @param {number} [params.episode]
    * @param {string[]} [params.titles]
    * @returns {Promise<import('./').TorrentResult[]>}
    */
-  async #query({ anilibriaId, episode, titles }) {
-    if (!anilibriaId) return []
+  async #query({ code, episode, titles }) {
+    if (!code) return []
 
-    const queryParams = new URLSearchParams({ id: anilibriaId.toString() })
+    const queryParams = new URLSearchParams({ code })
     if (episode) {
       queryParams.append('episode', episode.toString())
     }
 
-    const res = await fetch(`${this.url}?${queryParams}`)
-    if (!res.ok) return []
+    try {
+      const res = await fetch(`${this.torrentUrl}?${queryParams}`)
+      if (!res.ok) return []
 
-    /** @type {import('./types').AniLibria} */
-    const data = await res.json()
+      const data = await res.json()
 
-    if (!data || !data.torrents || !Array.isArray(data.torrents)) return []
+      if (!data || !data.torrents || !Array.isArray(data.torrents)) return []
 
-    return data.torrents.map(({ hash, quality, series, size, uploaded_timestamp }) => ({
-      hash: hash,
-      link: `magnet:?xt=urn:btih:${hash}`,
-      title: `${titles?.[0] || 'Anime'} ${series ? `- Серия ${series}` : ''} [${quality?.string || 'Unknown'}]`,
-      size: size || 0,
-      type: series ? undefined : 'batch',
-      date: uploaded_timestamp ? new Date(uploaded_timestamp * 1000) : new Date(),
-      seeders: 0,
-      leechers: 0,
-      downloads: 0,
-      accuracy: 'high'
-    }))
+      return data.torrents.map(({ hash, quality, series, size, uploaded_timestamp }) => ({
+        hash: hash,
+        link: `magnet:?xt=urn:btih:${hash}`,
+        title: `${titles?.[0] || 'Anime'} ${series ? `- Серия ${series}` : ''} [${quality?.string || 'Unknown'}]`,
+        size: size || 0,
+        type: series ? undefined : 'batch',
+        date: uploaded_timestamp ? new Date(uploaded_timestamp * 1000) : new Date(),
+        seeders: 0,
+        leechers: 0,
+        downloads: 0,
+        accuracy: 'high'
+      }))
+    } catch {
+      return []
+    }
   }
 
   /**
@@ -62,10 +84,10 @@ export default new class AniLibria extends AbstractSource {
     if (!anilistId) throw new Error('No anilistId provided')
     if (!titles?.length) throw new Error('No titles provided')
 
-    const anilibriaId = await this.#getAniLibriaId(anilistId)
-    if (!anilibriaId) return []
+    const code = await this.#getAniLibriaCode(anilistId, titles)
+    if (!code) return []
 
-    return this.#query({ anilibriaId, episode, titles })
+    return this.#query({ code, episode, titles })
   }
 
   /**
@@ -75,10 +97,10 @@ export default new class AniLibria extends AbstractSource {
     if (!anilistId) throw new Error('No anilistId provided')
     if (!titles?.length) throw new Error('No titles provided')
 
-    const anilibriaId = await this.#getAniLibriaId(anilistId)
-    if (!anilibriaId) return []
+    const code = await this.#getAniLibriaCode(anilistId, titles)
+    if (!code) return []
 
-    return this.#query({ anilibriaId, titles })
+    return this.#query({ code, titles })
   }
 
   /**
@@ -88,10 +110,10 @@ export default new class AniLibria extends AbstractSource {
     if (!anilistId) throw new Error('No anilistId provided')
     if (!titles?.length) throw new Error('No titles provided')
 
-    const anilibriaId = await this.#getAniLibriaId(anilistId)
-    if (!anilibriaId) return []
+    const code = await this.#getAniLibriaCode(anilistId, titles)
+    if (!code) return []
 
-    return this.#query({ anilibriaId, titles })
+    return this.#query({ code, titles })
   }
 
   /**
@@ -100,7 +122,7 @@ export default new class AniLibria extends AbstractSource {
    */
   async validate() {
     try {
-      const res = await fetch(this.apiUrl + '?id=1')
+      const res = await fetch(this.apiUrl + '?search=test')
       return res?.ok || false
     } catch {
       return false
